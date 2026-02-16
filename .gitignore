@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Env
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Outputs
+docs/alpha_qwen3_full.csv
+docs/bit_recipes/
+out_*/
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
