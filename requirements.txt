@@ -1,8 +1,21 @@
 # AlphaQ for Qwen3-Coder-Next
+# Install: pip install -r requirements.txt
+# Recommended: Python 3.10+, create conda env and install PyTorch first, then pip install -r requirements.txt
+
+# Model loading (Qwen3-Next / qwen3_next in transformers)
 torch>=2.2.0
-transformers>=4.36.0
-datasets>=2.14.0
-pulp>=2.7.0
+transformers>=4.45.0
+accelerate>=0.25.0
+huggingface_hub
+
+# Alpha computation (FARMS / alpha_hill) and precision solving
 numpy>=1.24.0
 scipy>=1.10.0
-accelerate>=0.25.0
+pulp>=2.7.0
+loguru
+
+# GPTQ from recipe (03) and eval (04) — calibration & PPL
+datasets>=2.14.0
+
+# Optional: for 03_gptq_from_recipe when run from this repo (else use Mixture-Compressor-MoE env)
+# texttable
