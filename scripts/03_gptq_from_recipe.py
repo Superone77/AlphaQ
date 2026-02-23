@@ -10,6 +10,7 @@ Usage:
     --recipe_csv docs/bit_recipes/qwen3_coder_next_gamma10.0_bpp3.5.csv \\
     --output_dir ./out_qwen3_bpp35 \\
     --nsamples 128 --seqlen 2048 --device_map auto
+  If OOM: use --calib_batch_size 16 (or 8) and/or --nsamples 64 --seqlen 1024
 """
 import argparse
 import csv
@@ -67,6 +68,7 @@ def run_gptq_qwen3_from_recipe(
     percdamp: float = 0.01,
     groupsize: int = -1,
     actorder: bool = False,
+    calib_batch_size: int = 32,
 ):
     use_cache = model.config.use_cache
     model.config.use_cache = False
@@ -97,16 +99,25 @@ def run_gptq_qwen3_from_recipe(
     for layer_idx in range(num_layers):
         layer = layers[layer_idx]
         layer_dev = next(layer.parameters()).device
-        cur_inp = layer_inps[layer_idx].to(layer_dev)
-        attn = attention_mask.to(layer_dev)
-        pos = position_ids.to(layer_dev)
-        with torch.no_grad():
-            if position_embeddings is not None:
-                cos, sin = position_embeddings[0].to(layer_dev), position_embeddings[1].to(layer_dev)
-                out = layer(cur_inp, (cos, sin), attention_mask=attn)[0]
-            else:
-                out = layer(cur_inp, attention_mask=attn, position_ids=pos)[0]
-        layer_inps.append(out.cpu() if out.device.type != "cpu" else out)
+        full_inp = layer_inps[layer_idx]
+        out_chunks = []
+        for start in range(0, nsamples, calib_batch_size):
+            end = min(start + calib_batch_size, nsamples)
+            cur_inp = full_inp[start:end].to(layer_dev)
+            attn = attention_mask[start:end].to(layer_dev)
+            pos = position_ids[start:end].to(layer_dev)
+            with torch.no_grad():
+                if position_embeddings is not None:
+                    cos = position_embeddings[0][start:end].to(layer_dev)
+                    sin = position_embeddings[1][start:end].to(layer_dev)
+                    out = layer(cur_inp, (cos, sin), attention_mask=attn)[0]
+                else:
+                    out = layer(cur_inp, attention_mask=attn, position_ids=pos)[0]
+            out_chunks.append(out.cpu() if out.device.type != "cpu" else out.clone())
+            del cur_inp, out
+            if layer_dev.type == "cuda":
+                torch.cuda.empty_cache()
+        layer_inps.append(torch.cat(out_chunks, dim=0))
         if (layer_idx + 1) % 12 == 0:
             logger.info("  Calib layer %s/%s", layer_idx + 1, num_layers)
 
@@ -190,14 +201,23 @@ def run_gptq_qwen3_from_recipe(
             logger.info("  GPTQ experts layer %s/%s", layer_idx + 1, num_layers)
         if layer_idx + 1 < num_layers:
             layer = layer.to(dev)
-            cur = layer_inps[layer_idx].to(dev)
-            with torch.no_grad():
-                if position_embeddings is not None:
-                    cos, sin = position_embeddings[0].to(dev), position_embeddings[1].to(dev)
-                    next_inp = layer(cur, (cos, sin), attention_mask=attention_mask.to(dev))[0]
-                else:
-                    next_inp = layer(cur, attention_mask=attention_mask.to(dev), position_ids=position_ids.to(dev))[0]
-            layer_inps[layer_idx + 1] = next_inp.cpu()
+            next_chunks = []
+            for start in range(0, nsamples, calib_batch_size):
+                end = min(start + calib_batch_size, nsamples)
+                cur = layer_inps[layer_idx][start:end].to(dev)
+                attn = attention_mask[start:end].to(dev)
+                with torch.no_grad():
+                    if position_embeddings is not None:
+                        cos = position_embeddings[0][start:end].to(dev)
+                        sin = position_embeddings[1][start:end].to(dev)
+                        next_inp = layer(cur, (cos, sin), attention_mask=attn)[0]
+                    else:
+                        next_inp = layer(cur, attention_mask=attn, position_ids=position_ids[start:end].to(dev))[0]
+                next_chunks.append(next_inp.cpu() if next_inp.device.type != "cpu" else next_inp.clone())
+                del cur, next_inp
+                if dev.type == "cuda":
+                    torch.cuda.empty_cache()
+            layer_inps[layer_idx + 1] = torch.cat(next_chunks, dim=0)
         layers[layer_idx] = layer.cpu()
         del layer
         torch.cuda.empty_cache()
@@ -213,6 +233,8 @@ def main():
     p.add_argument("--output_dir", type=str, required=True)
     p.add_argument("--nsamples", type=int, default=128)
     p.add_argument("--seqlen", type=int, default=2048)
+    p.add_argument("--calib_batch_size", type=int, default=32,
+                   help="Process this many samples per layer at a time to reduce GPU memory (default 32)")
     p.add_argument("--device_map", type=str, default="auto")
     p.add_argument("--blocksize", type=int, default=128)
     p.add_argument("--percdamp", type=float, default=0.01)
@@ -252,6 +274,7 @@ def main():
         percdamp=args.percdamp,
         groupsize=args.groupsize,
         actorder=args.act_order,
+        calib_batch_size=args.calib_batch_size,
     )
 
     out_dir = Path(args.output_dir)

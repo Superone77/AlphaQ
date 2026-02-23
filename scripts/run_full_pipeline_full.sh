@@ -13,13 +13,14 @@ if [[ -n "$LOG_FILE" ]]; then
   echo "=== Logging to $LOG_FILE at $(date) ==="
 fi
 
-# Config (edit as needed)
+# Config (edit as needed). If GPTQ OOM: CALIB_BATCH_SIZE=16 or 8; or NSAMPLES=64 SEQLEN=1024
 MODEL=${MODEL:-"Qwen/Qwen3-Coder-Next"}
 BPP=${BPP:-3.5}
 GAMMA=${GAMMA:-10.0}
 CANDIDATE_BITS=${CANDIDATE_BITS:-"2,3,4"}
 NSAMPLES=${NSAMPLES:-128}
 SEQLEN=${SEQLEN:-2048}
+CALIB_BATCH_SIZE=${CALIB_BATCH_SIZE:-32}
 DEVICE_MAP=${DEVICE_MAP:-auto}
 
 ALPHA_CSV="${ROOT}/docs/alpha_qwen3_full.csv"
@@ -72,6 +73,7 @@ python scripts/03_gptq_from_recipe.py \
   --output_dir "$OUT_DIR" \
   --nsamples "$NSAMPLES" \
   --seqlen "$SEQLEN" \
+  --calib_batch_size "$CALIB_BATCH_SIZE" \
   --device_map "$DEVICE_MAP"
 
 # 04: Eval PPL

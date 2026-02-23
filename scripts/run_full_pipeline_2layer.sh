@@ -24,6 +24,7 @@ GAMMA=${GAMMA:-10.0}
 CANDIDATE_BITS=${CANDIDATE_BITS:-"2,3,4"}
 NSAMPLES=${NSAMPLES:-128}
 SEQLEN=${SEQLEN:-2048}
+CALIB_BATCH_SIZE=${CALIB_BATCH_SIZE:-32}
 DEVICE_MAP=${DEVICE_MAP:-auto}
 # Set SKIP_GPTQ=1 to run only 01 and 02 (CPU-only test)
 SKIP_GPTQ=${SKIP_GPTQ:-0}
@@ -77,6 +78,7 @@ python scripts/03_gptq_from_recipe.py \
   --output_dir "$OUT_DIR" \
   --nsamples "$NSAMPLES" \
   --seqlen "$SEQLEN" \
+  --calib_batch_size "$CALIB_BATCH_SIZE" \
   --device_map "$DEVICE_MAP"
 
 # 04: Eval PPL
