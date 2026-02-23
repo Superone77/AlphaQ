@@ -86,6 +86,14 @@ def run_gptq_qwen3_from_recipe(
     attention_mask = torch.ones(nsamples, seqlen_act, dtype=torch.long, device=first_dev)
     position_ids = torch.arange(seqlen_act, device=first_dev).unsqueeze(0).expand(nsamples, -1)
 
+    # Qwen3-Next decoder layers require position_embeddings (cos, sin) from RoPE
+    rotary_emb = getattr(model.model, "rotary_emb", None)
+    if rotary_emb is not None:
+        with torch.no_grad():
+            position_embeddings = rotary_emb(layer_inps[0].to(first_dev), position_ids)
+    else:
+        position_embeddings = None
+
     for layer_idx in range(num_layers):
         layer = layers[layer_idx]
         layer_dev = next(layer.parameters()).device
@@ -93,7 +101,11 @@ def run_gptq_qwen3_from_recipe(
         attn = attention_mask.to(layer_dev)
         pos = position_ids.to(layer_dev)
         with torch.no_grad():
-            out = layer(cur_inp, attention_mask=attn, position_ids=pos)[0]
+            if position_embeddings is not None:
+                cos, sin = position_embeddings[0].to(layer_dev), position_embeddings[1].to(layer_dev)
+                out = layer(cur_inp, (cos, sin), attention_mask=attn)[0]
+            else:
+                out = layer(cur_inp, attention_mask=attn, position_ids=pos)[0]
         layer_inps.append(out.cpu() if out.device.type != "cpu" else out)
         if (layer_idx + 1) % 12 == 0:
             logger.info("  Calib layer %s/%s", layer_idx + 1, num_layers)
@@ -180,7 +192,11 @@ def run_gptq_qwen3_from_recipe(
             layer = layer.to(dev)
             cur = layer_inps[layer_idx].to(dev)
             with torch.no_grad():
-                next_inp = layer(cur, attention_mask=attention_mask.to(dev), position_ids=position_ids.to(dev))[0]
+                if position_embeddings is not None:
+                    cos, sin = position_embeddings[0].to(dev), position_embeddings[1].to(dev)
+                    next_inp = layer(cur, (cos, sin), attention_mask=attention_mask.to(dev))[0]
+                else:
+                    next_inp = layer(cur, attention_mask=attention_mask.to(dev), position_ids=position_ids.to(dev))[0]
             layer_inps[layer_idx + 1] = next_inp.cpu()
         layers[layer_idx] = layer.cpu()
         del layer
