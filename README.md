@@ -24,6 +24,35 @@ pip install -r requirements.txt
 
 Dependencies include: `torch`, `transformers`, `datasets`, `pulp`, `numpy`, `scipy`. For inference and evaluation only `torch` and `transformers` are required (+ `datasets` for PPL).
 
+### Multi-GPU (model parallelism)
+
+GPTQ (03), evaluation (04), and inference (05) support **multi-GPU via HuggingFace `device_map="auto"`**: the model is sharded across visible GPUs and each layer runs on its assigned device.
+
+- **03_gptq_from_recipe.py**: `--device_map auto` (default). Calibration and quantization run per layer on that layer’s device; no code changes needed.
+- **04_eval_quantized.py**: use `--device_map auto` for multi-GPU (default when CUDA is available). Override with `--device_map cuda:0` for a single GPU.
+- **05_inference.py**: `--device_map auto` (default). Inputs are moved to the model’s first device before `generate()`.
+
+This is **model parallelism** (one model spread across GPUs), not data parallelism.
+
+## One-command full pipeline
+
+Two scripts run the full flow (01 → 02 → 03 → 04 → 05) from the repo root:
+
+| Script | Model | Use case |
+|--------|--------|----------|
+| `scripts/run_full_pipeline_2layer.sh` | 2 layers only | Fast test (01–02 on CPU; 03–05 need GPU). Recipe covers 2 layers; 03 loads full model and quantizes only those layers’ experts. |
+| `scripts/run_full_pipeline_full.sh` | Full 48 layers | Full run. 01 uses minimal config (48 layers); 03 quantizes all layers per recipe. |
+
+```bash
+# From AlphaQ repo root (GPU required for steps 3–5)
+./scripts/run_full_pipeline_2layer.sh
+
+# Full model (longer; 01 takes a while for 48 layers)
+./scripts/run_full_pipeline_full.sh
+```
+
+Override defaults via env vars, e.g. `BPP=4.0 GAMMA=10.0 ./scripts/run_full_pipeline_full.sh`.
+
 ## Pipeline and Scripts
 
 ### 1. Compute Alpha (01_compute_alpha.py)
@@ -85,14 +114,14 @@ Computes **perplexity (PPL)** on **WikiText-2** for:
 - The quantize-then-dequantize directory saved in step 03.
 
 ```bash
-# Evaluate GPTQ output directory
+# Evaluate GPTQ output directory (multi-GPU by default when CUDA available)
 python scripts/04_eval_quantized.py --model_path ./out_qwen3_bpp35 --seqlen 2048
 
-# Evaluate original model
-python scripts/04_eval_quantized.py --model_path Qwen/Qwen3-Coder-Next --seqlen 2048
+# Single GPU or explicit device map
+python scripts/04_eval_quantized.py --model_path Qwen/Qwen3-Coder-Next --device_map cuda:0
 ```
 
-- **Input**: `--model_path` (HuggingFace id or local directory).
+- **Input**: `--model_path` (HuggingFace id or local directory). Optional `--device_map` (default: `auto` for multi-GPU when CUDA is available).
 - **Output**: WikiText-2 PPL printed to the console; use `--max_nsamples 0` to use the full test set.
 
 ### 5. Inference (05_inference.py)
@@ -120,7 +149,9 @@ AlphaQ/
 │   ├── 02_precision_solve.py     # Precision solving (MILP) → recipe CSV
 │   ├── 03_gptq_from_recipe.py    # GPTQ from recipe → save model
 │   ├── 04_eval_quantized.py     # WikiText-2 PPL evaluation
-│   └── 05_inference.py          # Generative inference
+│   ├── 05_inference.py          # Generative inference
+│   ├── run_full_pipeline_2layer.sh   # Full pipeline, 2 layers only
+│   └── run_full_pipeline_full.sh     # Full pipeline, 48 layers
 ├── alphaq/                   # AlphaQ core (alpha computation, etc.)
 │   ├── __init__.py
 │   └── utils_alpha.py
