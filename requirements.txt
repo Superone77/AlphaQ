@@ -1,18 +1,22 @@
 # AlphaQ for Qwen3-Coder-Next
-# Install: pip install -r requirements.txt
-# Recommended: Python 3.10+, create conda env and install PyTorch first, then pip install -r requirements.txt
+# Tested on Python 3.10, CUDA 12.6
+#
+# Install PyTorch first (match your CUDA version), e.g. for CUDA 12.6:
+#   pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+# Then:
+#   pip install -r requirements.txt
 
-# Model loading (Qwen3-Next / qwen3_next in transformers; 4.46+ for qwen3_next)
-torch>=2.2.0
-transformers>=4.46.0
-accelerate>=0.25.0
-huggingface_hub
+# Core: model loading and inference (Qwen3-Next requires transformers>=4.52)
+torch>=2.4.0
+transformers>=4.52.0
+accelerate>=0.31.0
+huggingface_hub>=0.24.0
+safetensors>=0.4.3
+
+# Calibration data
+datasets>=2.14.0
 
 # Alpha computation (FARMS / alpha_hill) and precision solving
-numpy>=1.24.0,<2.0
-scipy>=1.10.0
+numpy>=1.23.0,<2.0
+scipy>=1.8.0
 pulp>=2.7.0
-loguru
-
-# GPTQ from recipe (03) and eval (04) — calibration & PPL
-datasets>=2.14.0

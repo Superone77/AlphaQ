@@ -112,11 +112,15 @@ def _patch_qwen3_cache_for_minimal_layers():
         pass
 
 
-def get_minimal_model_and_tokenizer(max_layers: int = 2, num_experts: int = 512):
+def get_minimal_model_and_tokenizer(
+    max_layers: int = 2,
+    num_experts: int = 512,
+    model: str = "Qwen/Qwen3-Coder-Next",
+):
     """Build minimal Qwen3-Coder-Next from config (no weights download). Returns (model, tokenizer)."""
     _patch_qwen3_cache_for_minimal_layers()
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-    config = AutoConfig.from_pretrained("Qwen/Qwen3-Coder-Next", trust_remote_code=True)
+    config = AutoConfig.from_pretrained(model, trust_remote_code=True)
     config.num_hidden_layers = max_layers
     # Truncate layer_types so cache init matches num_hidden_layers (avoids IndexError in has_previous_state)
     if getattr(config, "layer_types", None) is not None and len(config.layer_types) > max_layers:
@@ -131,6 +135,6 @@ def get_minimal_model_and_tokenizer(max_layers: int = 2, num_experts: int = 512)
     config.linear_num_key_heads = 2
     config.linear_num_value_heads = 2
     # Keep vocab_size from pretrained so tokenizer and embed_tokens match
-    model = AutoModelForCausalLM.from_config(config)
-    tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-Coder-Next", trust_remote_code=True)
-    return model, tokenizer
+    minimal_model = AutoModelForCausalLM.from_config(config)
+    tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+    return minimal_model, tokenizer

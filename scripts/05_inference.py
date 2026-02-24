@@ -17,13 +17,15 @@ sys.path.insert(0, str(ROOT))
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from native_quant_utils import get_minimal_model_and_tokenizer
+from native_quant_utils import _patch_qwen3_cache_for_minimal_layers, get_minimal_model_and_tokenizer
 
 
 def main():
+    _patch_qwen3_cache_for_minimal_layers()
     p = argparse.ArgumentParser(description="Inference with Qwen3-Coder-Next (original or GPTQ-roundtrip)")
     p.add_argument("--model_path", type=str, default=None, help="HuggingFace model id or local dir. Not used if --from_config.")
     p.add_argument("--from_config", action="store_true", help="Build minimal model from config (e.g. 2-layer original).")
+    p.add_argument("--model", type=str, default="Qwen/Qwen3-Coder-Next", help="Model path or HF id for --from_config tokenizer/config.")
     p.add_argument("--max_layers", type=int, default=2, help="When --from_config: number of decoder layers.")
     p.add_argument("--device_map", type=str, default="auto")
     p.add_argument("--prompt", type=str, default="The meaning of life is")
@@ -37,7 +39,7 @@ def main():
 
     if args.from_config:
         print(f"Building minimal model from config ({args.max_layers} layers) ...")
-        model, tokenizer = get_minimal_model_and_tokenizer(max_layers=args.max_layers)
+        model, tokenizer = get_minimal_model_and_tokenizer(max_layers=args.max_layers, model=args.model)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = model.to(device)
     else:

@@ -23,6 +23,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 
 from native_quant_utils import (
+    _patch_qwen3_cache_for_minimal_layers,
     load_recipe_expert_bits,
     apply_recipe_to_model,
     get_minimal_model_and_tokenizer,
@@ -76,9 +77,11 @@ def eval_ppl(model, tokenizer, text: str, seqlen: int, device: str, max_nsamples
 
 
 def main():
+    _patch_qwen3_cache_for_minimal_layers()
     p = argparse.ArgumentParser(description="Eval WikiText-2 PPL for Qwen3-Coder-Next")
     p.add_argument("--model_path", type=str, default=None, help="HF model id or local dir. Not used if --from_config.")
     p.add_argument("--from_config", action="store_true", help="Build minimal model from config (use with --max_layers).")
+    p.add_argument("--model", type=str, default="Qwen/Qwen3-Coder-Next", help="Model path or HF id for --from_config tokenizer/config.")
     p.add_argument("--max_layers", type=int, default=2, help="When --from_config: number of decoder layers.")
     p.add_argument("--recipe_csv", type=str, default=None, help="Apply native (symmetric) quant from recipe in memory before eval.")
     p.add_argument("--seqlen", type=int, default=2048)
@@ -101,7 +104,7 @@ def main():
 
     if args.from_config:
         print(f"Building minimal model from config ({args.max_layers} layers) ...")
-        model, tokenizer = get_minimal_model_and_tokenizer(max_layers=args.max_layers)
+        model, tokenizer = get_minimal_model_and_tokenizer(max_layers=args.max_layers, model=args.model)
         model = model.to(device)
     else:
         print(f"Loading tokenizer and model from {args.model_path} (device_map={use_device_map}) ...")

@@ -27,7 +27,9 @@ import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 
+from safetensors import safe_open
 from gptq import GPTQ
+from native_quant_utils import get_minimal_model_and_tokenizer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,22 +79,45 @@ def run_gptq_qwen3_from_recipe(
     hidden_size = model.config.hidden_size
 
     logger.info("Building calibration inputs ...")
-    embeds = []
-    for batch in trainloader:
-        inp = batch[0]
-        embeds.append(model.model.embed_tokens(inp))
-    layer_inps = [torch.cat(embeds, dim=0)]
+    all_input_ids = torch.cat([batch[0] for batch in trainloader], dim=0).cpu()
+    # Use the model's own embed_tokens when it matches hidden_size (minimal/from_config model).
+    # For real models load directly from safetensors to bypass slow accelerate offload hooks.
+    _own_embed_w = model.model.embed_tokens.weight
+    _index_file = Path(model.config._name_or_path) / "model.safetensors.index.json"
+    if _own_embed_w.shape[1] == hidden_size:
+        # Minimal model: embed weight already has the right hidden_size
+        embed_weight = _own_embed_w.data.float().cpu()
+        model_dtype = next(model.parameters()).dtype
+    elif _index_file.exists():
+        # Real model: load from safetensors to avoid accelerate offload overhead
+        import json as _json
+        with open(_index_file) as _f:
+            _shard_file = _json.load(_f)["weight_map"]["model.embed_tokens.weight"]
+        _shard_path = Path(model.config._name_or_path) / _shard_file
+        with safe_open(str(_shard_path), framework="pt", device="cpu") as _st:
+            embed_weight = _st.get_tensor("model.embed_tokens.weight").float()
+        model_dtype = next((p for p in model.parameters() if p.device.type != "meta"), None)
+        model_dtype = model_dtype.dtype if model_dtype is not None else torch.bfloat16
+    else:
+        embed_weight = _own_embed_w.data.float().cpu()
+        model_dtype = next(model.parameters()).dtype
+    with torch.no_grad():
+        all_embeds = nn.functional.embedding(all_input_ids, embed_weight).to(model_dtype)
+    del embed_weight
+    layer_inps = [all_embeds]
     nsamples = layer_inps[0].shape[0]
     seqlen_act = layer_inps[0].shape[1]
     first_dev = next(model.parameters()).device
-    attention_mask = torch.ones(nsamples, seqlen_act, dtype=torch.long, device=first_dev)
-    position_ids = torch.arange(seqlen_act, device=first_dev).unsqueeze(0).expand(nsamples, -1)
+    attention_mask = torch.ones(nsamples, seqlen_act, dtype=torch.bool, device="cpu")
+    position_ids = torch.arange(seqlen_act, device="cpu").unsqueeze(0).expand(nsamples, -1)
 
     # Qwen3-Next decoder layers require position_embeddings (cos, sin) from RoPE
     rotary_emb = getattr(model.model, "rotary_emb", None)
     if rotary_emb is not None:
+        rotary_dev = next(rotary_emb.parameters()).device if len(list(rotary_emb.parameters())) > 0 else "cpu"
         with torch.no_grad():
-            position_embeddings = rotary_emb(layer_inps[0].to(first_dev), position_ids)
+            position_embeddings = rotary_emb(layer_inps[0].to(rotary_dev), position_ids.to(rotary_dev))
+        position_embeddings = (position_embeddings[0].cpu(), position_embeddings[1].cpu())
     else:
         position_embeddings = None
 
@@ -110,9 +135,9 @@ def run_gptq_qwen3_from_recipe(
                 if position_embeddings is not None:
                     cos = position_embeddings[0][start:end].to(layer_dev)
                     sin = position_embeddings[1][start:end].to(layer_dev)
-                    out = layer(cur_inp, (cos, sin), attention_mask=attn)[0]
+                    out = layer(cur_inp, position_embeddings=(cos, sin), attention_mask=attn)
                 else:
-                    out = layer(cur_inp, attention_mask=attn, position_ids=pos)[0]
+                    out = layer(cur_inp, position_embeddings=None, attention_mask=attn, position_ids=pos)
             out_chunks.append(out.cpu() if out.device.type != "cpu" else out.clone())
             del cur_inp, out
             if layer_dev.type == "cuda":
@@ -132,70 +157,53 @@ def run_gptq_qwen3_from_recipe(
         experts = layer.mlp.experts
         layer_dev = next(layers[layer_idx].parameters()).device
         mlp_inp = layer_inps[layer_idx].to(layer_dev)
-        mlp_inp_flat = mlp_inp.reshape(-1, hidden_size)
-        gate_up = experts.gate_up_proj
-        down = experts.down_proj
-        inter = gate_up.shape[1] // 2
+        mlp_inp_flat = mlp_inp.reshape(-1, hidden_size).float()
         dev = next(layer.parameters()).device
+        num_experts = len(experts)
 
-        for e in range(gate_up.shape[0]):
-            name_gate = f"{prefix}mlp.experts.gate_up_proj.expert_{e}.gate"
-            name_up = f"{prefix}mlp.experts.gate_up_proj.expert_{e}.up"
-            name_gu = f"{prefix}mlp.experts.gate_up_proj.expert_{e}"
-            bit_gate = get_bit(name_gate)
-            bit_up = get_bit(name_up)
-            bit_whole = get_bit(name_gu)
-            if bit_gate is not None and bit_up is not None:
-                W_full = gate_up.data[e].float().clone().to(dev)
-                W_gate = W_full[:inter]
-                W_up = W_full[inter:]
-                parts = []
-                for part_name, W_part, bit in [(name_gate, W_gate, bit_gate), (name_up, W_up, bit_up)]:
-                    wrapper = nn.Linear(W_part.shape[1], W_part.shape[0], bias=False, device=dev)
-                    wrapper.weight.data = W_part.t().clone()
-                    gptq = GPTQ(wrapper, logger, part_name, bit)
-                    gptq.quantizer.configure(bit, perchannel=True, sym=True, mse=False, pack=False)
-                    out_flat = mlp_inp_flat @ W_part.t()
-                    gptq.add_batch(mlp_inp_flat, out_flat)
-                    gptq.fasterquant(blocksize=blocksize, percdamp=percdamp, groupsize=groupsize, actorder=actorder, name=part_name)
-                    q_w = wrapper.weight.data.t().clone()
-                    parts.append(q_w)
-                    gptq.free()
-                experts.gate_up_proj.data[e] = torch.cat(parts, dim=0).to(experts.gate_up_proj.dtype).to(experts.gate_up_proj.device)
-            elif bit_whole is not None:
-                W = gate_up.data[e].float().clone().to(dev)
-                wrapper = nn.Linear(gate_up.shape[2], gate_up.shape[1], bias=False, device=dev)
-                wrapper.weight.data = W.t().clone()
-                gptq = GPTQ(wrapper, logger, name_gu, bit_whole)
-                gptq.quantizer.configure(bit_whole, perchannel=True, sym=True, mse=False, pack=False)
-                out_flat = mlp_inp_flat @ W.t()
-                gptq.add_batch(mlp_inp_flat, out_flat)
-                gptq.fasterquant(blocksize=blocksize, percdamp=percdamp, groupsize=groupsize, actorder=actorder, name=name_gu)
-                q_w = wrapper.weight.data.t().clone()
-                experts.gate_up_proj.data[e] = q_w.to(experts.gate_up_proj.dtype).to(experts.gate_up_proj.device)
+        for e in range(num_experts):
+            expert = experts[e]
+            # Quantize gate_proj and up_proj
+            for proj_name in ("gate_proj", "up_proj"):
+                linear = getattr(expert, proj_name, None)
+                if linear is None:
+                    continue
+                name = f"{prefix}mlp.experts.{e}.{proj_name}"
+                bit = get_bit(name)
+                if bit is None:
+                    continue
+                W = linear.weight.data.float().to(dev)
+                wrapper = nn.Linear(W.shape[1], W.shape[0], bias=False, device=dev)
+                wrapper.weight.data = W.clone()
+                gptq = GPTQ(wrapper, logger, name, bit)
+                gptq.quantizer.configure(bit, perchannel=True, sym=True, mse=False, pack=False)
+                out_flat = mlp_inp_flat.to(dev) @ W.t()
+                gptq.add_batch(mlp_inp_flat.to(dev), out_flat)
+                gptq.fasterquant(blocksize=blocksize, percdamp=percdamp, groupsize=groupsize, actorder=actorder, name=name)
+                linear.weight.data = wrapper.weight.data.to(linear.weight.dtype).to(linear.weight.device)
                 gptq.free()
-
-        for e in range(down.shape[0]):
-            name_d = f"{prefix}mlp.experts.down_proj.expert_{e}"
-            bit = get_bit(name_d)
-            if bit is None:
-                continue
-            W_gu = experts.gate_up_proj.data[e].float().to(dev)
-            out1 = mlp_inp_flat @ W_gu.t()
-            gate_part = out1[:, :inter]
-            up_part = out1[:, inter:]
-            mid = torch.nn.functional.silu(up_part) * gate_part
-            W_d = down.data[e].float().clone().to(dev)
-            wrapper = nn.Linear(inter, down.shape[2], bias=False, device=dev)
-            wrapper.weight.data = W_d.t().clone()
-            gptq = GPTQ(wrapper, logger, name_d, bit)
-            gptq.quantizer.configure(bit, perchannel=True, sym=True, mse=False, pack=False)
-            out_flat = mid @ W_d.t()
-            gptq.add_batch(mid, out_flat)
-            gptq.fasterquant(blocksize=blocksize, percdamp=percdamp, groupsize=groupsize, actorder=actorder, name=name_d)
-            q_w = wrapper.weight.data.t().clone()
-            experts.down_proj.data[e] = q_w.to(experts.down_proj.dtype).to(experts.down_proj.device)
-            gptq.free()
+            # Quantize down_proj (needs gate/up activations as input)
+            down_linear = getattr(expert, "down_proj", None)
+            if down_linear is not None:
+                name_d = f"{prefix}mlp.experts.{e}.down_proj"
+                bit = get_bit(name_d)
+                if bit is not None:
+                    inp = mlp_inp_flat.to(dev)
+                    W_gate = expert.gate_proj.weight.data.float().to(dev)
+                    W_up = expert.up_proj.weight.data.float().to(dev)
+                    gate_out = torch.nn.functional.silu(inp @ W_gate.t())
+                    up_out = inp @ W_up.t()
+                    mid = gate_out * up_out
+                    W_d = down_linear.weight.data.float().to(dev)
+                    wrapper = nn.Linear(W_d.shape[1], W_d.shape[0], bias=False, device=dev)
+                    wrapper.weight.data = W_d.clone()
+                    gptq = GPTQ(wrapper, logger, name_d, bit)
+                    gptq.quantizer.configure(bit, perchannel=True, sym=True, mse=False, pack=False)
+                    out_flat = mid @ W_d.t()
+                    gptq.add_batch(mid, out_flat)
+                    gptq.fasterquant(blocksize=blocksize, percdamp=percdamp, groupsize=groupsize, actorder=actorder, name=name_d)
+                    down_linear.weight.data = wrapper.weight.data.to(down_linear.weight.dtype).to(down_linear.weight.device)
+                    gptq.free()
 
         if (layer_idx + 1) % 6 == 0:
             logger.info("  GPTQ experts layer %s/%s", layer_idx + 1, num_layers)
@@ -210,14 +218,15 @@ def run_gptq_qwen3_from_recipe(
                     if position_embeddings is not None:
                         cos = position_embeddings[0][start:end].to(dev)
                         sin = position_embeddings[1][start:end].to(dev)
-                        next_inp = layer(cur, (cos, sin), attention_mask=attn)[0]
+                        next_inp = layer(cur, position_embeddings=(cos, sin), attention_mask=attn)
                     else:
-                        next_inp = layer(cur, attention_mask=attn, position_ids=position_ids[start:end].to(dev))[0]
+                        next_inp = layer(cur, position_embeddings=None, attention_mask=attn, position_ids=position_ids[start:end].to(dev))
                 next_chunks.append(next_inp.cpu() if next_inp.device.type != "cpu" else next_inp.clone())
                 del cur, next_inp
                 if dev.type == "cuda":
                     torch.cuda.empty_cache()
             layer_inps[layer_idx + 1] = torch.cat(next_chunks, dim=0)
+        layer_inps[layer_idx] = None  # free CPU RAM
         layers[layer_idx] = layer.cpu()
         del layer
         torch.cuda.empty_cache()
@@ -229,6 +238,9 @@ def run_gptq_qwen3_from_recipe(
 def main():
     p = argparse.ArgumentParser(description="Qwen3-Coder-Next GPTQ from AlphaQ recipe CSV")
     p.add_argument("--model", type=str, default="Qwen/Qwen3-Coder-Next")
+    p.add_argument("--from_config", action="store_true",
+                   help="Build minimal model from config instead of loading real weights (for 2-layer testing)")
+    p.add_argument("--max_layers", type=int, default=2, help="Number of layers when --from_config")
     p.add_argument("--recipe_csv", type=str, required=True)
     p.add_argument("--output_dir", type=str, required=True)
     p.add_argument("--nsamples", type=int, default=128)
@@ -251,14 +263,20 @@ def main():
     recipe = load_recipe(str(recipe_path))
     logger.info("Loaded recipe: %s entries from %s", len(recipe), recipe_path)
 
-    logger.info("Loading model: %s (device_map=%s)", args.model, args.device_map)
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype="auto",
-        device_map=args.device_map,
-        trust_remote_code=True,
-    )
+    if args.from_config:
+        logger.info("Building minimal model from config (%s layers) ...", args.max_layers)
+        model, tokenizer = get_minimal_model_and_tokenizer(max_layers=args.max_layers, model=args.model)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = model.to(device)
+    else:
+        logger.info("Loading model: %s (device_map=%s)", args.model, args.device_map)
+        tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype="auto",
+            device_map=args.device_map,
+            trust_remote_code=True,
+        )
 
     trainloader = get_wikitext_calibration(args.nsamples, args.seqlen, tokenizer, str(next(model.parameters()).device))
     logger.info("Calibration: %s samples, seqlen=%s", len(trainloader), args.seqlen)
@@ -280,7 +298,17 @@ def main():
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Saving quantize-then-dequantize model ...")
-    model.save_pretrained(out_dir, safe_serialization=True)
+    # Truncate layer_types in config to match actual num_hidden_layers (avoids cache IndexError on reload)
+    if getattr(model.config, "layer_types", None) is not None:
+        model.config.layer_types = model.config.layer_types[:model.config.num_hidden_layers]
+    # Patch broken deepspeed import in accelerate's extract_model_from_parallel before calling save_pretrained
+    import accelerate.utils.other as _auo
+    _orig_extract = _auo.extract_model_from_parallel
+    _auo.extract_model_from_parallel = lambda m, **kw: m
+    try:
+        model.save_pretrained(out_dir, safe_serialization=True, max_shard_size="10GB")
+    finally:
+        _auo.extract_model_from_parallel = _orig_extract
     tokenizer.save_pretrained(out_dir)
     logger.info("Done. Load with AutoModelForCausalLM.from_pretrained(%s)", out_dir)
     return 0

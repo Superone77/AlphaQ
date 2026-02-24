@@ -5,8 +5,8 @@ Outputs CSV with columns: name, layer, module_type, alpha, variance.
 Used as input for 02_precision_solve.py.
 
 Usage:
-  python scripts/01_compute_alpha.py --output_csv docs/alpha_qwen3_full.csv
-  python scripts/01_compute_alpha.py --output_csv docs/alpha_qwen3_full.csv --max_layers 2  # quick test
+  python scripts/01_compute_alpha.py --model /path/to/Qwen3-Coder-Next --output_csv docs/alpha_qwen3_full.csv
+  python scripts/01_compute_alpha.py --model /path/to/Qwen3-Coder-Next --output_csv docs/alpha_qwen3_full.csv --max_layers 2  # quick test
 """
 import argparse
 import csv
@@ -29,8 +29,8 @@ from transformers import AutoConfig, AutoModelForCausalLM
 from alphaq.utils_alpha import alpha_hill_from_weight
 
 
-def get_minimal_config(num_layers=48, num_experts=512):
-    config = AutoConfig.from_pretrained("Qwen/Qwen3-Coder-Next", trust_remote_code=True)
+def get_minimal_config(model_name_or_path, num_layers=48, num_experts=512):
+    config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
     config.num_hidden_layers = num_layers
     config.num_experts = num_experts
     config.hidden_size = 128
@@ -145,6 +145,8 @@ def write_csv(results: list, output_path: Path):
 
 def main():
     p = argparse.ArgumentParser(description="Compute AlphaQ alpha/variance for Qwen3-Coder-Next")
+    p.add_argument("--model", type=str, default="Qwen/Qwen3-Coder-Next",
+                   help="Local path or HuggingFace model ID for config (default: Qwen/Qwen3-Coder-Next)")
     p.add_argument("--output_csv", type=str, default="docs/alpha_qwen3_full.csv", help="Output CSV path")
     p.add_argument("--max_layers", type=int, default=48, help="Max decoder layers to process (default 48)")
     p.add_argument("--num_experts", type=int, default=512, help="Number of experts (default 512)")
@@ -157,7 +159,7 @@ def main():
     num_layers = args.max_layers
     num_experts = args.num_experts
     print(f"Building Qwen3-Coder-Next from config ({num_layers} layers, {num_experts} experts) ...")
-    config = get_minimal_config(num_layers=num_layers, num_experts=num_experts)
+    config = get_minimal_config(args.model, num_layers=num_layers, num_experts=num_experts)
     model = AutoModelForCausalLM.from_config(config)
     model = model.to("cpu")
     model.eval()
