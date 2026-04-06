@@ -1,6 +1,8 @@
-# AlphaQ — Mixed-Precision Quantization for Qwen3-Coder-Next
+# AlphaQ — Mixed-Precision Quantization
 
-Based on the **AlphaQ** method from [Mixture-Compressor-MoE](https://github.com/Aaronhuang-778/Mixture-Compressor-MoE), this repository provides a full pipeline for **Qwen3-Coder-Next**: **precision solving (bit-width allocation) → GPTQ quantization → quantized model evaluation**, with standalone scripts and clear usage instructions.
+Paper: https://openreview.net/attachment?id=rbE8Pxs8vx&name=pdf
+
+
 
 ## Overview
 
