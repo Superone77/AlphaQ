@@ -1,7 +1,8 @@
-# AlphaQ — Mixed-Precision Quantization
+# AlphaQ: Calibration-Free Bit Allocation for MoE Quantization
 
-Paper: https://openreview.net/attachment?id=rbE8Pxs8vx&name=pdf
+Project page: https://superone77.github.io/AlphaQ/
 
+Paper: https://openreview.net/pdf?id=rbE8Pxs8vx
 
 
 ## Overview
@@ -15,6 +16,13 @@ Paper: https://openreview.net/attachment?id=rbE8Pxs8vx&name=pdf
 | **Inference** | Run generative inference on the original model or the GPTQ output directory | `scripts/05_inference.py` |
 
 Alpha values (input to precision solving) are computed by `scripts/01_compute_alpha.py`, which builds a minimal config-based Qwen3-Coder-Next and computes alpha/variance per layer, writing a CSV.
+
+This repository now contains two code entry points:
+
+- `scripts/`, `alphaq/`, `gptq.py`, and `utils/`: the current Qwen3-Coder-Next pipeline.
+- `paper_code/`: the broader manuscript code path for Mixtral, DeepSeekV2-Lite, Qwen1.5-MoE, FARMS, and paper figure-analysis utilities.
+
+The static project homepage lives in `docs/` and is deployable with the included GitHub Pages workflow.
 
 ## Setup
 
@@ -145,6 +153,7 @@ python scripts/05_inference.py --model_path Qwen/Qwen3-Coder-Next --prompt "Your
 ```
 AlphaQ/
 ├── README.md                 # This file
+├── docs/                     # GitHub Pages project homepage and lightweight assets
 ├── requirements.txt          # Dependencies
 ├── scripts/
 │   ├── 01_compute_alpha.py       # Compute alpha/variance → CSV
@@ -158,6 +167,7 @@ AlphaQ/
 │   ├── __init__.py
 │   └── utils_alpha.py
 ├── gptq.py                   # GPTQ implementation (from MC-MoE)
+├── paper_code/               # Manuscript-era multi-model AlphaQ implementation
 ├── utils/                    # Quantizers and helpers
 │   ├── __init__.py
 │   ├── quantizer.py
