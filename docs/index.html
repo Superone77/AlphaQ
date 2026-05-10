@@ -56,7 +56,6 @@
 
     <section class="pt-32 pb-16 bg-white">
         <div class="max-w-4xl mx-auto px-4 text-center">
-            <p class="text-highlight font-medium text-sm tracking-wide uppercase mb-4">ICLR 2026 Workshop</p>
             <h1 class="text-4xl md:text-5xl font-bold text-primary mb-6 leading-tight">
                 AlphaQ: Calibration-Free Bit Allocation for Mixture-of-Experts Quantization
             </h1>
@@ -65,14 +64,23 @@
                 without calibration data for the bit-allocation stage.
             </p>
 
-            <div class="flex flex-wrap justify-center items-center gap-x-3 gap-y-1 text-sm text-gray-700 mb-4">
-                <span>Wanqi Yang</span>
-                <span>Yuexiao Ma</span>
-                <span>Alexander Conzelmann</span>
-                <span>Xiawu Zheng</span>
-                <span>Michael W. Mahoney</span>
-                <span>T. Konstantin Rusch</span>
-                <span>Shiwei Liu</span>
+            <div class="mb-8">
+                <div class="flex flex-wrap justify-center items-center gap-x-3 gap-y-2 text-sm md:text-base text-gray-800 mb-4">
+                    <span><strong>Wanqi Yang</strong><sup>1</sup></span>
+                    <span><strong>Yuexiao Ma</strong><sup>2</sup></span>
+                    <span><strong>Alexander Conzelmann</strong><sup>3,8</sup></span>
+                    <span><strong>Xiawu Zheng</strong><sup>2</sup></span>
+                    <span><strong>Michael W. Mahoney</strong><sup>4,5,6</sup></span>
+                    <span><strong>T. Konstantin Rusch</strong><sup>3,7,8,9</sup></span>
+                    <span><strong>Shiwei Liu</strong><sup>3,7,8</sup></span>
+                </div>
+                <div class="max-w-3xl mx-auto text-sm text-gray-500 leading-7">
+                    <div><sup>1</sup><span class="ml-1">Independent Researcher</span></div>
+                    <div><sup>2</sup><span class="ml-1">Key Laboratory of Multimedia Trusted Perception and Efficient Computing, Xiamen University</span></div>
+                    <div><sup>3</sup><span class="ml-1">Max Planck Institute for Intelligent Systems</span> <span class="mx-2 text-gray-300">|</span> <sup>4</sup><span class="ml-1">International Computer Science Institute</span></div>
+                    <div><sup>5</sup><span class="ml-1">Lawrence Berkeley National Laboratory</span> <span class="mx-2 text-gray-300">|</span> <sup>6</sup><span class="ml-1">University of California, Berkeley</span></div>
+                    <div><sup>7</sup><span class="ml-1">ELLIS Institute Tübingen</span> <span class="mx-2 text-gray-300">|</span> <sup>8</sup><span class="ml-1">Tübingen AI Center</span> <span class="mx-2 text-gray-300">|</span> <sup>9</sup><span class="ml-1">Liquid AI</span></div>
+                </div>
             </div>
 
             <div class="flex flex-wrap justify-center gap-3 mb-10">
@@ -96,6 +104,11 @@
 
     <section id="overview" class="py-20 bg-gray-50">
         <div class="max-w-6xl mx-auto px-4">
+            <div class="card p-6 mb-10 reveal">
+                <img src="static/images/alphaq-workflow.png" alt="AlphaQ workflow." class="w-full rounded">
+                <p class="figure-caption">AlphaQ measures heavy-tailedness, scales quantization noise, and solves constrained bit allocation.</p>
+            </div>
+
             <div class="text-center mb-12 reveal">
                 <h2 class="text-3xl font-bold text-primary mb-4">Core Contributions</h2>
                 <div class="w-16 h-1 bg-highlight mx-auto"></div>
@@ -103,22 +116,12 @@
 
             <div class="grid md:grid-cols-3 gap-6">
                 <div class="card p-8 reveal">
-                    <div class="w-12 h-12 rounded-lg bg-red-50 flex items-center justify-center mb-4">
-                        <i data-lucide="database-zap" class="w-6 h-6 text-highlight"></i>
-                    </div>
-                    <h3 class="text-xl font-semibold mb-3">Calibration-Free Allocation</h3>
-                    <p class="text-gray-600">
-                        AlphaQ avoids calibration-set dependence when assigning bits, reducing domain bias in MoE quantization.
-                    </p>
-                </div>
-
-                <div class="card p-8 reveal">
                     <div class="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center mb-4">
                         <i data-lucide="activity" class="w-6 h-6 text-accent"></i>
                     </div>
                     <h3 class="text-xl font-semibold mb-3">Spectral Importance</h3>
                     <p class="text-gray-600">
-                        PL Alpha Hill from expert weight spectra provides a data-free signal for quantization sensitivity.
+                        PL_Alpha_Hill from expert weight spectra provides a data-free signal for quantization sensitivity.
                     </p>
                 </div>
 
@@ -131,15 +134,25 @@
                         A budget-constrained solver assigns mixed precision across experts and layers under matched bit budgets.
                     </p>
                 </div>
+
+                <div class="card p-8 reveal">
+                    <div class="w-12 h-12 rounded-lg bg-red-50 flex items-center justify-center mb-4">
+                        <i data-lucide="database-zap" class="w-6 h-6 text-highlight"></i>
+                    </div>
+                    <h3 class="text-xl font-semibold mb-3">Calibration-Free Allocation</h3>
+                    <p class="text-gray-600">
+                        AlphaQ avoids calibration-set dependence when assigning bits, reducing domain bias in MoE quantization.
+                    </p>
+                </div>
             </div>
         </div>
     </section>
 
     <section id="motivation" class="py-20 bg-white">
         <div class="max-w-6xl mx-auto px-4">
-            <div class="grid md:grid-cols-2 gap-12 items-center">
+            <div class="max-w-4xl mx-auto space-y-8">
                 <div class="reveal">
-                    <p class="text-highlight font-medium text-sm uppercase mb-2">The Challenge</p>
+                    <p class="text-highlight font-medium text-sm uppercase mb-2">The Motivation</p>
                     <h2 class="text-3xl font-bold text-primary mb-6">Calibration data can bias bit allocation</h2>
                     <p class="text-gray-600 mb-6">
                         Existing data-driven methods estimate expert importance from calibration samples. For frontier MoE LLMs,
@@ -160,7 +173,7 @@
                                 <i data-lucide="crosshair" class="w-3 h-3 text-highlight"></i>
                             </div>
                             <div>
-                                <h4 class="font-medium">Task-level skew</h4>
+                                <h4 class="font-medium">Domain-level skew</h4>
                                 <p class="text-sm text-gray-500">Allocation can overfit to the calibration domain and degrade unseen tasks.</p>
                             </div>
                         </div>
@@ -203,8 +216,9 @@
             </div>
 
             <div class="card p-6 mb-8 reveal">
-                <img src="static/images/alphaq-workflow.png" alt="AlphaQ workflow." class="w-full rounded">
-                <p class="figure-caption">AlphaQ measures heavy-tailedness, scales quantization noise, and solves constrained bit allocation.</p>
+                <h3 class="font-semibold text-center mb-4">Heavy-Tailed Expert Diversity</h3>
+                <img src="static/images/pl-alpha-distribution.png" alt="PL Alpha Hill distribution across MoE models." class="w-full rounded border">
+                <p class="figure-caption">PL_Alpha_Hill varies across blocks, layers, and MoE architectures.</p>
             </div>
 
             <div class="grid md:grid-cols-3 gap-6">
@@ -213,7 +227,7 @@
                         <i data-lucide="scan-line" class="w-5 h-5 text-accent"></i>
                         <h3 class="text-lg font-semibold">Measure Spectra</h3>
                     </div>
-                    <p class="text-gray-600 text-sm">Compute PL Alpha Hill for expert-layer weight matrices, optionally with FARMS sampling.</p>
+                    <p class="text-gray-600 text-sm">Compute PL_Alpha_Hill for expert-layer weight matrices, optionally with FARMS sampling.</p>
                 </div>
                 <div class="step-card reveal">
                     <div class="flex items-center gap-2 mb-3">
@@ -230,12 +244,6 @@
                     <p class="text-gray-600 text-sm">Optimize bit assignment under a single global average-bit budget.</p>
                 </div>
             </div>
-
-            <div class="card p-6 mt-8 reveal">
-                <h3 class="font-semibold text-center mb-4">Heavy-Tailed Expert Diversity</h3>
-                <img src="static/images/pl-alpha-distribution.png" alt="PL Alpha Hill distribution across MoE models." class="w-full rounded border">
-                <p class="figure-caption">PL Alpha Hill varies across blocks, layers, and MoE architectures.</p>
-            </div>
         </div>
     </section>
 
@@ -250,7 +258,7 @@
             <div class="card p-6 mb-8 reveal">
                 <h3 class="font-semibold text-center mb-4">Main MoE Quantization Results</h3>
                 <img src="static/images/main-results-wide-table.png" alt="Main AlphaQ result table." class="w-full rounded border">
-                <p class="figure-caption">Results on DeepSeekV2-Lite, Qwen1.5-MoE, Mixtral-8x7B, and Qwen3-30B-A3B.</p>
+                <p class="figure-caption">Results on DeepSeekV2-Lite, Qwen1.5-MoE , and Mixtral-8x7B.</p>
             </div>
 
             <div class="grid md:grid-cols-2 gap-6 mb-8">
@@ -283,42 +291,6 @@
                 </div>
             </div>
 
-            <div class="card p-6 reveal">
-                <h3 class="font-semibold text-center mb-4">Alpha, Noise, and Degradation</h3>
-                <div class="grid md:grid-cols-2 gap-6 items-center">
-                    <div>
-                        <img src="static/images/alpha-noise-joint.png" alt="Alpha-noise joint analysis." class="w-full rounded border">
-                        <p class="figure-caption">Alpha-scaled quantization noise tracks quantization degradation.</p>
-                    </div>
-                    <div class="flex flex-col items-center justify-center gap-4">
-                        <div class="result-badge">
-                            <i data-lucide="award" class="w-8 h-8"></i>
-                            <div class="text-left">
-                                <p class="text-3xl font-bold">3.5-bit</p>
-                                <p class="text-sm opacity-90">Near full-precision Qwen1.5-MoE accuracy</p>
-                            </div>
-                        </div>
-                        <div class="p-5 bg-gradient-to-r from-highlight/10 to-orange-50 rounded-xl border border-highlight/20 text-center w-full">
-                            <i data-lucide="hard-drive" class="w-6 h-6 text-highlight mx-auto mb-2"></i>
-                            <p class="text-lg font-semibold text-primary">4x memory compression</p>
-                            <p class="text-gray-600 text-sm">Reported for Qwen1.5-MoE at a 3.5-bit expert budget.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid md:grid-cols-2 gap-6 mt-8">
-                <div class="card p-6 reveal">
-                    <h3 class="font-semibold text-lg mb-4">Calibration Activation Patterns</h3>
-                    <img src="static/images/calibration-activation-heatmaps.png" alt="Domain-dependent activation heatmaps." class="w-full rounded border">
-                    <p class="figure-caption">Activation frequencies and corresponding bit-width allocations vary by domain.</p>
-                </div>
-                <div class="card p-6 reveal">
-                    <h3 class="font-semibold text-lg mb-4">Gamma Sensitivity</h3>
-                    <img src="static/images/gamma-ablation.png" alt="Gamma ablation." class="w-full rounded border">
-                    <p class="figure-caption">Sensitivity analysis for the alpha-scaling parameter.</p>
-                </div>
-            </div>
         </div>
     </section>
 
@@ -340,7 +312,7 @@
                     <div class="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
                         <i data-lucide="git-branch" class="w-5 h-5 text-purple-600"></i>
                     </div>
-                    <p class="text-gray-700"><span class="font-semibold text-primary">PL Alpha Hill provides a global signal</span> for expert and layer heterogeneity across MoE architectures.</p>
+                    <p class="text-gray-700"><span class="font-semibold text-primary">PL_Alpha_Hill provides a global signal</span> for expert and layer heterogeneity across MoE architectures.</p>
                 </div>
                 <div class="card p-5 reveal flex items-start gap-4">
                     <div class="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
