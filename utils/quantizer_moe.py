@@ -104,6 +104,11 @@ class Quantizer(nn.Module):
             return (x > scale / 2).float() * scale + (x < zero / 2).float() * zero
         if self.maxq == 1:
             q = binary(x)
+        # elif self.maxq == 3 and (not self.pack):
+        #     # TODO: pack the residual quantization
+        #     return residual_binary(x, scale=scale, r_scale=self.r_scale, zero=zero, order=2)
+        # elif self.maxq == 7 and (not self.pack):
+        #     return r_residual_binary(x, scale=scale, r_scale=self.r_scale, rr_scale=self.rr_scale, order=3)
         else:
             q = normal_quantize(x, scale, zero, maxq)
         return scale * (q - zero) if not self.pack else q
@@ -125,6 +130,13 @@ class Quantizer(nn.Module):
                 scale=scale.to(dev)
                 zero=zero.to(dev)
                 maxq=maxq.to(dev)
+        # elif (self.maxq == 3) and (not self.pack):
+        #     scale, r_scale, zero = residual_scale(x, order=2)
+        #     if dev != scale.device:
+        #         scale=scale.to(dev)
+        #         r_scale=r_scale.to(dev)
+        #         zero=zero.to(dev)
+        #         maxq=maxq.to(dev)
         else:
             if dev != scale.device:
                 scale=scale.to(dev)
@@ -152,7 +164,7 @@ class Quantizer(nn.Module):
             xmax[tmp] = +1
             scale = (xmax - xmin) / maxq
             zero = -xmin / scale
-
+            
             if maxq < 0:
                 scale = xmax
                 zero = xmin
@@ -164,13 +176,16 @@ class Quantizer(nn.Module):
                     zero = -xmin / scale
             tau_range = 0.1
             tau_n = 50
+            # best = torch.zeros_like(x[:, 0], device=dev)
             best = torch.full([x.shape[0]], float('inf'), device=dev, dtype=torch.float16)
+            # _p = torch.ones([x.shape[0]], dtype=torch.float16)
             p_left = 1 - tau_range
             p_right = 1 + tau_range
             for p in torch.cat([torch.ones(1),torch.linspace(1.0,p_right,tau_n+1)[1:],torch.linspace(1.0,p_left,tau_n+1)[1:]]):
                 xmin1 = p * xmin
                 xmax1 = p * xmax
                 scale1 = (xmax1 - xmin1) / maxq
+                # zero1 = torch.round(-xmin1 / scale1) if not self.sym else zero
                 zero1 = -xmin1 / scale1
 
                 w_q = self._quantize(x, scale1.unsqueeze(1), zero1.unsqueeze(1), maxq)
@@ -179,10 +194,11 @@ class Quantizer(nn.Module):
                 w_q -= w
                 w_q.abs_()
                 w_q.pow_(self.norm)
-
+                
                 err = torch.sum(w_q, 1)
                 tmp = err < best
                 if torch.any(tmp):
+                    # _p[tmp] = p
                     best[tmp] = err[tmp]
                     scale[tmp] = scale1[tmp]
                     zero[tmp] = zero1[tmp]
@@ -215,3 +231,16 @@ class Quantizer(nn.Module):
 
     def ready(self):
         return torch.all(self.scale != 0)
+
+
+# random_tensor = torch.randn(10, 10)
+# mask = torch.randn(10, 10) < 0.5  # Generate a mask where about 50% are True
+# random_tensor[mask] = 0 
+
+# sign_tensor = torch.sign(random_tensor)
+
+# print(random_tensor)
+# print(sign_tensor)
+
+# sign_tensor = torch.where(random_tensor >= 0, 1, -1)
+# print(sign_tensor)

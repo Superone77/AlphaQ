@@ -1,16 +1,13 @@
-# Copied and adapted from Mixture-Compressor-MoE AlphaQ/Code/utils_alpha.py
-# Uses standard logging instead of loguru for portability.
 import os
 import csv
 import math
 import random
-import logging
 from typing import Optional, Tuple, Dict, Iterable, Any
 
 import torch
 import torch.nn as nn
+from loguru import logger
 
-logger = logging.getLogger(__name__)
 
 USE_FARMS: bool = True
 _env_mode = os.getenv("ALPHA_MODE", "").strip().upper()
@@ -176,6 +173,9 @@ def _esd_alpha_from_sorted_eigs(
         seq = torch.arange(n, device=nz_eigs.device, dtype=nz_eigs.dtype)
         denom = (torch.sum(log_nz_eigs[i:]) - n * log_nz_eigs[i]).clamp_min(eps)
         final_alpha = 1 + n / denom
+        final_D = torch.max(
+            torch.abs(1 - (nz_eigs[i:] / xmin) ** (-final_alpha + 1) - seq / n)
+        )
         k_used = int(n)
         return float(final_alpha), k_used, N
 
@@ -278,7 +278,7 @@ def compute_alpha_values(
         mode_tag = "farms" if (USE_FARMS if use_farms is None else use_farms) else "baseline"
         cache_path = os.path.join(cache_dir, f"alpha_values_{mode_tag}.csv")
         if os.path.exists(cache_path):
-            logger.info("Loading alpha values from cache: %s", cache_path)
+            logger.info(f"Loading alpha values from cache: {cache_path}")
             cached_results = load_alpha_from_csv(cache_path)
             if cached_results and all(
                 isinstance(stats, dict)
@@ -288,7 +288,7 @@ def compute_alpha_values(
                 and stats["variance"] == stats["variance"]
             for stats in cached_results.values()):
                 return cached_results
-            logger.info("Cached alpha values missing variance. Recomputing.")
+            logger.info("Cached alpha values missing variance information. Recomputing.")
 
     logger.info("Computing alpha values for all linear layers...")
     results: Dict[str, Dict[str, float]] = {}
@@ -311,14 +311,14 @@ def compute_alpha_values(
                     "variance": variance,
                 }
             except Exception as e:
-                logger.warning("Failed to compute alpha for %s: %s", name, e)
+                logger.warning(f"Failed to compute alpha for {name}: {e}")
                 results[name] = {
                     "alpha": float("nan"),
                     "variance": float("nan"),
                 }
 
     if cache_path:
-        logger.info("Saving alpha values to: %s", cache_path)
+        logger.info(f"Saving alpha values to: {cache_path}")
         save_alpha_to_csv(results, cache_path)
 
     return results
@@ -359,6 +359,7 @@ def load_alpha_from_csv(filename: str) -> Dict[str, Dict[str, float]]:
                 "variance": variance_val,
             }
 
+    # Remove potential empty keys from malformed rows
     alpha_results = {
         name: stats for name, stats in alpha_results.items() if name
     }
