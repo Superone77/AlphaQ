@@ -1,5 +1,8 @@
 # AlphaQ: Calibration-Free Bit Allocation for Mixture-of-Experts Quantization
 
+Paper: https://arxiv.org/abs/2606.04980
+Project Page: https://superone77.github.io/AlphaQ/
+
 AlphaQ is a novel **calibration-free** bit-allocation method for Mixture-of-Experts (MoE) model quantization. Unlike traditional data-driven methods that rely on calibration data to estimate expert importance, AlphaQ derives importance signals directly from model weights by leveraging **Heavy-Tailed Self-Regularization (HT-SR) theory**.
 
 ## Key Features
