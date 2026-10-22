@@ -167,11 +167,10 @@ AlphaQ builds upon Heavy-Tailed Self-Regularization (HT-SR) theory and the FARMS
 ## Citation
 
 ```bibtex
-@inproceedings{yang2026alphaq,
-  title={{AlphaQ}: Calibration-Free Bit Allocation for Mixture-of-Experts Quantization},
-  author={Yang, Wanqi and Ma, Yuexiao and Conzelmann, Alexander and Zheng, Xiawu and Mahoney, Michael W. and Rusch, T. Konstantin and Liu, Shiwei},
-  booktitle={Advances in Neural Information Processing Systems},
-  year={2026},
-  url={https://arxiv.org/abs/2606.04980}
+@article{yang2026alphaq,
+  title={AlphaQ: Calibration-Free Bit Allocation for Mixture-of-Experts Quantization},
+  author={Yang, Wanqi and Ma, Yuexiao and Conzelmann, Alexander and Zheng, Xiawu and Mahoney, Michael W and Rusch, T Konstantin and Liu, Shiwei},
+  journal={arXiv preprint arXiv:2606.04980},
+  year={2026}
 }
 ```
